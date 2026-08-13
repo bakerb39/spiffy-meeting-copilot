@@ -105,7 +105,14 @@ export function createApplication() {
         const body = await upstream.text();
         if (!upstream.ok) {
           console.error("Realtime setup failed:", upstream.status, body.slice(0, 500));
-          return res.status(502).send("OpenAI could not start transcription. Check the server logs and model access.");
+          let upstreamMessage = "OpenAI rejected the transcription request.";
+          try {
+            const parsed = JSON.parse(body);
+            upstreamMessage = parsed?.error?.message || parsed?.message || upstreamMessage;
+          } catch {
+            if (body && body.length < 400) upstreamMessage = body;
+          }
+          return res.status(502).send(`OpenAI error ${upstream.status}: ${upstreamMessage}`);
         }
         res.type("application/sdp").send(body);
       } catch (error) {
