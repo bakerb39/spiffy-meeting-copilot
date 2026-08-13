@@ -6,6 +6,16 @@ let mediaStream = null;
 let wakeLock = null;
 const liveText = new Map();
 
+function withTimeout(promise, milliseconds, message) {
+  let timeout;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timeout)),
+    new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+    })
+  ]);
+}
+
 function setMessage(text, error = false) {
   const el = $("#listener-message");
   el.textContent = text;
@@ -52,7 +62,20 @@ async function startListening() {
   $("#start-listening").disabled = true;
   $("#listener-status").textContent = "Requesting microphone…";
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("This browser cannot access the microphone. Open this page directly in Safari.");
+    }
+    mediaStream = await withTimeout(
+      navigator.mediaDevices.getUserMedia({ audio: true }),
+      15000,
+      "The iPhone did not finish opening the microphone. Close this tab, reopen the QR link directly in Safari, and try again."
+    );
+    const audioTrack = mediaStream.getAudioTracks()[0];
+    if (!audioTrack || audioTrack.readyState !== "live") {
+      throw new Error("Safari granted permission but did not provide an active microphone.");
+    }
+    $("#listener-status").textContent = "Microphone active — connecting…";
+    $("#listening-orb").classList.add("active");
     peer = new RTCPeerConnection();
     mediaStream.getTracks().forEach((track) => peer.addTrack(track, mediaStream));
     const channel = peer.createDataChannel("oai-events");
@@ -67,11 +90,15 @@ async function startListening() {
 
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
-    const response = await fetch("/api/realtime/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/sdp", "X-Session-Code": code },
-      body: offer.sdp
-    });
+    const response = await withTimeout(
+      fetch("/api/realtime/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/sdp", "X-Session-Code": code },
+        body: offer.sdp
+      }),
+      25000,
+      "The microphone opened, but the transcription service did not respond within 25 seconds."
+    );
     if (!response.ok) throw new Error(await response.text());
     await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
     $("#start-listening").classList.add("hidden");

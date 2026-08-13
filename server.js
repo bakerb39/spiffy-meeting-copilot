@@ -87,6 +87,8 @@ export function createApplication() {
       };
 
       try {
+        const upstreamController = new AbortController();
+        const upstreamTimeout = setTimeout(() => upstreamController.abort(), 20_000);
         const form = new FormData();
         form.set("sdp", req.body);
         form.set("session", JSON.stringify(sessionConfig));
@@ -96,8 +98,10 @@ export function createApplication() {
             Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
             "OpenAI-Safety-Identifier": crypto.createHash("sha256").update(session.code).digest("hex")
           },
-          body: form
+          body: form,
+          signal: upstreamController.signal
         });
+        clearTimeout(upstreamTimeout);
         const body = await upstream.text();
         if (!upstream.ok) {
           console.error("Realtime setup failed:", upstream.status, body.slice(0, 500));
@@ -106,7 +110,10 @@ export function createApplication() {
         res.type("application/sdp").send(body);
       } catch (error) {
         console.error("Realtime setup error:", error);
-        res.status(502).send("Could not connect to the transcription service.");
+        const message = error?.name === "AbortError"
+          ? "OpenAI did not respond within 20 seconds. Please try Start listening again."
+          : "Could not connect to the transcription service.";
+        res.status(502).send(message);
       }
     }
   );
