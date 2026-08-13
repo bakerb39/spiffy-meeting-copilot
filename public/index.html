@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <title>Spiffy Meeting Copilot</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-mark">B²</div>
+    <div>
+      <p class="eyebrow">B Squared</p>
+      <h1>Spiffy Meeting Copilot</h1>
+    </div>
+    <span class="privacy-pill">Audio is not recorded</span>
+  </header>
+
+  <main class="dashboard">
+    <section class="card pairing-card" aria-labelledby="pair-title">
+      <div class="section-heading">
+        <div><p class="step">Step 1</p><h2 id="pair-title">Connect your iPhone</h2></div>
+        <span id="pair-status" class="status waiting"><span></span>Waiting for phone</span>
+      </div>
+      <div class="pair-grid">
+        <div class="qr-frame"><img id="qr-code" alt="QR code to open the listener on an iPhone"></div>
+        <div class="pair-copy">
+          <p>Scan this code with your iPhone camera, then approve microphone access.</p>
+          <div class="code-box"><span>Session code</span><strong id="session-code">••••••••</strong></div>
+          <button id="copy-link" class="button secondary" type="button" disabled>Copy phone link</button>
+          <p class="small">Use only with everyone’s knowledge and consent. Your OpenAI key remains on the server.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card transcript-card" aria-labelledby="transcript-title">
+      <div class="section-heading">
+        <div><p class="step">Step 2</p><h2 id="transcript-title">Live transcript</h2></div>
+        <button id="clear-transcript" class="text-button" type="button">Clear view</button>
+      </div>
+      <div id="transcript" class="transcript" aria-live="polite">
+        <p class="placeholder">Completed speech will appear here after the phone starts listening.</p>
+      </div>
+      <p id="partial-transcript" class="partial" aria-live="polite"></p>
+    </section>
+
+    <section class="card context-card" aria-labelledby="context-title">
+      <div class="section-heading"><div><p class="step">Step 3</p><h2 id="context-title">Add your context</h2></div></div>
+      <textarea id="meeting-context" maxlength="30000" placeholder="Paste talking points, background, names, facts, or the outcome you want…"></textarea>
+      <div class="context-actions">
+        <label class="button secondary file-button">Add text file<input id="context-file" type="file" accept=".txt,.md,.csv,.json,.html,text/plain,text/markdown,text/csv,application/json,text/html"></label>
+        <span id="file-name" class="small">TXT, MD, CSV, JSON, or HTML</span>
+      </div>
+    </section>
+
+    <section class="card response-card" aria-labelledby="response-title">
+      <div class="section-heading">
+        <div><p class="step">Step 4</p><h2 id="response-title">Suggested response</h2></div>
+        <select id="response-style" aria-label="Response style"><option value="concise">Concise</option><option value="warm">Warm</option><option value="direct">Direct</option></select>
+      </div>
+      <div id="suggestion" class="suggestion" aria-live="polite">When you need help, tap “Suggest what to say.”</div>
+      <div class="suggestion-actions">
+        <button id="suggest" class="button primary" type="button">Suggest what to say</button>
+        <button id="copy-suggestion" class="button secondary" type="button" disabled>Copy response</button>
+      </div>
+      <p id="app-message" class="message" role="status"></p>
+    </section>
+  </main>
+  <footer>Spiffy Meeting Copilot by B Squared · Sessions expire after four hours.</footer>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/dashboard.js" type="module"></script>
+</body>
+</html>

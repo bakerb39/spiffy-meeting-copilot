@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Spiffy Listener</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="listener-body">
+  <main class="listener-shell">
+    <div class="listener-brand"><div class="brand-mark">B²</div><div><p class="eyebrow">B Squared</p><h1>Spiffy Listener</h1></div></div>
+
+    <section id="join-panel" class="mobile-card">
+      <p class="step">Connect</p>
+      <h2>Enter the session code</h2>
+      <form id="join-form">
+        <label for="code-input">Code shown on the computer</label>
+        <input id="code-input" inputmode="text" autocomplete="one-time-code" maxlength="8" placeholder="ABCD2345" required>
+        <button class="button primary full" type="submit">Connect</button>
+      </form>
+      <p id="join-message" class="message" role="alert"></p>
+    </section>
+
+    <section id="listen-panel" class="mobile-card hidden">
+      <div class="listening-orb" id="listening-orb"><span class="mic-icon">●</span></div>
+      <p id="listener-status" class="listener-status">Ready to listen</p>
+      <p class="session-label">Session <strong id="listener-code"></strong></p>
+      <label class="consent"><input id="consent" type="checkbox"><span>I have permission to transcribe this meeting.</span></label>
+      <button id="start-listening" class="button primary full" type="button" disabled>Start listening</button>
+      <button id="stop-listening" class="button danger full hidden" type="button">Stop listening</button>
+      <div class="phone-transcript">
+        <p class="step">Latest words</p>
+        <p id="phone-transcript">Your live transcript will appear here.</p>
+      </div>
+      <p class="small centered">Keep this page open. A red indicator always shows when the microphone is active. Audio is sent for transcription but is not recorded by this app.</p>
+      <p id="listener-message" class="message" role="status"></p>
+    </section>
+  </main>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/listener.js" type="module"></script>
+</body>
+</html>
