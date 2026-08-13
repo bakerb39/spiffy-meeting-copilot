@@ -1,0 +1,23 @@
+{
+  "name": "spiffy-meeting-copilot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An iPhone listener and desktop meeting copilot for Render.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "openai": "^5.12.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  }
+}
