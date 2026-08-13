@@ -2,7 +2,7 @@ services:
   - type: web
     name: spiffy-meeting-copilot
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /healthz
