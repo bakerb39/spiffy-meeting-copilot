@@ -4,6 +4,8 @@ let code = new URLSearchParams(location.search).get("code")?.toUpperCase() || ""
 let peer = null;
 let mediaStream = null;
 let wakeLock = null;
+let dataChannel = null;
+let commitTimer = null;
 const liveText = new Map();
 
 function withTimeout(promise, milliseconds, message) {
@@ -78,11 +80,12 @@ async function startListening() {
     $("#listening-orb").classList.add("active");
     peer = new RTCPeerConnection();
     mediaStream.getTracks().forEach((track) => peer.addTrack(track, mediaStream));
-    const channel = peer.createDataChannel("oai-events");
-    channel.addEventListener("message", handleRealtimeEvent);
-    channel.addEventListener("open", () => {
+    dataChannel = peer.createDataChannel("oai-events");
+    dataChannel.addEventListener("message", handleRealtimeEvent);
+    dataChannel.addEventListener("open", () => {
       $("#listener-status").textContent = "Listening now";
       $("#listening-orb").classList.add("active");
+      commitTimer = setInterval(commitAudioTurn, 5000);
     });
     peer.addEventListener("connectionstatechange", () => {
       if (["failed", "disconnected"].includes(peer?.connectionState)) setMessage("The transcription connection was interrupted.", true);
@@ -144,16 +147,30 @@ function handleRealtimeEvent(message) {
     }
     $("#listener-status").textContent = "Listening now";
   }
-  if (event.type === "conversation.item.input_audio_transcription.failed" || event.type === "error") {
+  if (event.type === "conversation.item.input_audio_transcription.failed") {
+    setMessage(event.error?.message || "A transcription error occurred.", true);
+  }
+  if (event.type === "error" && !String(event.error?.message || "").toLowerCase().includes("buffer too small")) {
     setMessage(event.error?.message || "A transcription error occurred.", true);
   }
 }
 
+function commitAudioTurn() {
+  if (dataChannel?.readyState === "open" && mediaStream?.active) {
+    dataChannel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    $("#listener-status").textContent = "Transcribing…";
+  }
+}
+
 function stopListening() {
+  if (commitTimer) clearInterval(commitTimer);
+  commitTimer = null;
+  commitAudioTurn();
   mediaStream?.getTracks().forEach((track) => track.stop());
   peer?.close();
   wakeLock?.release().catch(() => {});
   peer = null;
+  dataChannel = null;
   mediaStream = null;
   wakeLock = null;
   $("#listening-orb").classList.remove("active");

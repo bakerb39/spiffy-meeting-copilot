@@ -74,12 +74,7 @@ export function createApplication() {
               model: process.env.OPENAI_TRANSCRIBE_MODEL || "gpt-live-transcribe",
               delay: "low"
             },
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 700
-            }
+            turn_detection: null
           }
         }
       };
