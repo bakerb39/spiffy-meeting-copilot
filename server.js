@@ -58,6 +58,44 @@ export function createApplication() {
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
+  app.post(
+    "/api/transcribe",
+    apiLimiter,
+    express.raw({ type: ["audio/webm", "audio/mp4", "audio/mpeg", "application/octet-stream"], limit: "12mb" }),
+    async (req, res) => {
+      const session = getSession(req.get("x-session-code"));
+      if (!session) return res.status(404).json({ error: "Meeting session not found or expired." });
+      if (!process.env.OPENAI_API_KEY) return res.status(503).json({ error: "OPENAI_API_KEY is not configured." });
+      if (!Buffer.isBuffer(req.body) || req.body.length < 500) return res.status(400).json({ error: "The audio segment was empty." });
+
+      const contentType = req.get("content-type")?.split(";")[0] || "audio/mp4";
+      const extension = contentType.includes("webm") ? "webm" : contentType.includes("mpeg") ? "mp3" : "mp4";
+      try {
+        const form = new FormData();
+        form.set("model", process.env.OPENAI_FILE_TRANSCRIBE_MODEL || "gpt-transcribe");
+        form.set("response_format", "json");
+        form.set("file", new Blob([req.body], { type: contentType }), `meeting-segment.${extension}`);
+        const upstream = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+          body: form
+        });
+        const body = await upstream.text();
+        if (!upstream.ok) {
+          console.error("Audio transcription failed:", upstream.status, body.slice(0, 500));
+          let message = "OpenAI rejected the audio segment.";
+          try { message = JSON.parse(body)?.error?.message || message; } catch { /* keep safe message */ }
+          return res.status(502).json({ error: `OpenAI error ${upstream.status}: ${message}` });
+        }
+        const data = JSON.parse(body);
+        res.json({ text: String(data.text || "").trim() });
+      } catch (error) {
+        console.error("Audio transcription error:", error);
+        res.status(502).json({ error: "Could not transcribe the audio segment." });
+      }
+    }
+  );
+
   app.get(
     "/api/realtime/token",
     apiLimiter,

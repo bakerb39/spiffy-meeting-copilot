@@ -15,3 +15,5 @@ services:
         value: gpt-5-mini
       - key: OPENAI_TRANSCRIBE_MODEL
         value: gpt-live-transcribe
+      - key: OPENAI_FILE_TRANSCRIBE_MODEL
+        value: gpt-transcribe

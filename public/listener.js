@@ -1,12 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
 const socket = io();
 let code = new URLSearchParams(location.search).get("code")?.toUpperCase() || "";
-let peer = null;
 let mediaStream = null;
 let wakeLock = null;
-let dataChannel = null;
-let commitTimer = null;
-const liveText = new Map();
+let recorder = null;
+let chunkTimer = null;
+let listening = false;
 
 function withTimeout(promise, milliseconds, message) {
   let timeout;
@@ -76,48 +75,14 @@ async function startListening() {
     if (!audioTrack || audioTrack.readyState !== "live") {
       throw new Error("Safari granted permission but did not provide an active microphone.");
     }
-    $("#listener-status").textContent = "Microphone active — connecting…";
+    $("#listener-status").textContent = "Microphone active — starting…";
     $("#listening-orb").classList.add("active");
-    peer = new RTCPeerConnection();
-    mediaStream.getTracks().forEach((track) => peer.addTrack(track, mediaStream));
-    dataChannel = peer.createDataChannel("oai-events");
-    dataChannel.addEventListener("message", handleRealtimeEvent);
-    dataChannel.addEventListener("open", () => {
-      $("#listener-status").textContent = "Listening now";
-      $("#listening-orb").classList.add("active");
-      commitTimer = setInterval(commitAudioTurn, 5000);
-    });
-    peer.addEventListener("connectionstatechange", () => {
-      if (["failed", "disconnected"].includes(peer?.connectionState)) setMessage("The transcription connection was interrupted.", true);
-    });
-
-    const tokenResponse = await withTimeout(
-      fetch("/api/realtime/token", { headers: { "X-Session-Code": code } }),
-      20000,
-      "The microphone opened, but the server did not return a connection token."
-    );
-    if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
-    const tokenData = await tokenResponse.json();
-    if (!tokenData.value) throw new Error("The server returned an invalid connection token.");
-
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    const response = await withTimeout(
-      fetch("https://api.openai.com/v1/realtime/calls", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${tokenData.value}`,
-          "Content-Type": "application/sdp"
-        },
-        body: offer.sdp
-      }),
-      25000,
-      "The iPhone could not establish a direct transcription connection with OpenAI."
-    );
-    if (!response.ok) throw new Error(`OpenAI connection error ${response.status}: ${await response.text()}`);
-    await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
+    if (typeof MediaRecorder === "undefined") throw new Error("This version of Safari cannot create audio segments.");
+    listening = true;
+    startAudioSegment();
     $("#start-listening").classList.add("hidden");
     $("#stop-listening").classList.remove("hidden");
+    $("#listener-status").textContent = "Listening now";
     if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen").catch(() => null);
   } catch (error) {
     stopListening();
@@ -127,50 +92,57 @@ async function startListening() {
   }
 }
 
-function handleRealtimeEvent(message) {
-  let event;
-  try { event = JSON.parse(message.data); } catch { return; }
-  if (event.type === "input_audio_buffer.speech_started") $("#listener-status").textContent = "Hearing speech…";
-  if (event.type === "input_audio_buffer.speech_stopped") $("#listener-status").textContent = "Transcribing…";
-  if (event.type === "conversation.item.input_audio_transcription.delta") {
-    const text = `${liveText.get(event.item_id) || ""}${event.delta || ""}`;
-    liveText.set(event.item_id, text);
-    $("#phone-transcript").textContent = text;
-    socket.emit("transcript:partial", { itemId: event.item_id, text });
-  }
-  if (event.type === "conversation.item.input_audio_transcription.completed") {
-    const text = String(event.transcript || liveText.get(event.item_id) || "").trim();
-    liveText.delete(event.item_id);
-    if (text) {
-      $("#phone-transcript").textContent = text;
-      socket.emit("transcript:final", { itemId: event.item_id, text });
-    }
-    $("#listener-status").textContent = "Listening now";
-  }
-  if (event.type === "conversation.item.input_audio_transcription.failed") {
-    setMessage(event.error?.message || "A transcription error occurred.", true);
-  }
-  if (event.type === "error" && !String(event.error?.message || "").toLowerCase().includes("buffer too small")) {
-    setMessage(event.error?.message || "A transcription error occurred.", true);
-  }
+function preferredAudioType() {
+  return ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
-function commitAudioTurn() {
-  if (dataChannel?.readyState === "open" && mediaStream?.active) {
-    dataChannel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-    $("#listener-status").textContent = "Transcribing…";
+function startAudioSegment() {
+  if (!listening || !mediaStream?.active) return;
+  const chunks = [];
+  const mimeType = preferredAudioType();
+  recorder = mimeType ? new MediaRecorder(mediaStream, { mimeType }) : new MediaRecorder(mediaStream);
+  recorder.addEventListener("dataavailable", (event) => { if (event.data.size) chunks.push(event.data); });
+  recorder.addEventListener("stop", async () => {
+    const blob = new Blob(chunks, { type: recorder?.mimeType || mimeType || "audio/mp4" });
+    if (blob.size > 500) await transcribeSegment(blob);
+    if (listening) startAudioSegment();
+  }, { once: true });
+  recorder.start();
+  chunkTimer = setTimeout(() => {
+    if (recorder?.state === "recording") recorder.stop();
+  }, 7000);
+}
+
+async function transcribeSegment(blob) {
+  $("#listener-status").textContent = "Transcribing latest words…";
+  try {
+    const response = await withTimeout(fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "audio/mp4", "X-Session-Code": code },
+      body: blob
+    }), 30000, "The transcription request took too long.");
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Transcription failed (${response.status}).`);
+    if (data.text) {
+      $("#phone-transcript").textContent = data.text;
+      socket.emit("transcript:final", { itemId: `${Date.now()}`, text: data.text });
+      setMessage("");
+    }
+  } catch (error) {
+    setMessage(error.message || "Could not transcribe this audio segment.", true);
+  } finally {
+    if (listening) $("#listener-status").textContent = "Listening now";
   }
 }
 
 function stopListening() {
-  if (commitTimer) clearInterval(commitTimer);
-  commitTimer = null;
-  commitAudioTurn();
+  listening = false;
+  if (chunkTimer) clearTimeout(chunkTimer);
+  chunkTimer = null;
+  if (recorder?.state === "recording") recorder.stop();
   mediaStream?.getTracks().forEach((track) => track.stop());
-  peer?.close();
   wakeLock?.release().catch(() => {});
-  peer = null;
-  dataChannel = null;
+  recorder = null;
   mediaStream = null;
   wakeLock = null;
   $("#listening-orb").classList.remove("active");
