@@ -88,18 +88,30 @@ async function startListening() {
       if (["failed", "disconnected"].includes(peer?.connectionState)) setMessage("The transcription connection was interrupted.", true);
     });
 
+    const tokenResponse = await withTimeout(
+      fetch("/api/realtime/token", { headers: { "X-Session-Code": code } }),
+      20000,
+      "The microphone opened, but the server did not return a connection token."
+    );
+    if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.value) throw new Error("The server returned an invalid connection token.");
+
     const offer = await peer.createOffer();
     await peer.setLocalDescription(offer);
     const response = await withTimeout(
-      fetch("/api/realtime/session", {
+      fetch("https://api.openai.com/v1/realtime/calls", {
         method: "POST",
-        headers: { "Content-Type": "application/sdp", "X-Session-Code": code },
+        headers: {
+          Authorization: `Bearer ${tokenData.value}`,
+          "Content-Type": "application/sdp"
+        },
         body: offer.sdp
       }),
       25000,
-      "The microphone opened, but the transcription service did not respond within 25 seconds."
+      "The iPhone could not establish a direct transcription connection with OpenAI."
     );
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) throw new Error(`OpenAI connection error ${response.status}: ${await response.text()}`);
     await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
     $("#start-listening").classList.add("hidden");
     $("#stop-listening").classList.remove("hidden");

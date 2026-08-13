@@ -46,7 +46,7 @@ export function createApplication() {
       directives: {
         "default-src": ["'self'"],
         "img-src": ["'self'", "data:"],
-        "connect-src": ["'self'", "ws:", "wss:"],
+        "connect-src": ["'self'", "ws:", "wss:", "https://api.openai.com"],
         "media-src": ["'self'", "blob:"],
         "style-src": ["'self'"],
         "script-src": ["'self'"]
@@ -58,15 +58,13 @@ export function createApplication() {
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-  app.post(
-    "/api/realtime/session",
+  app.get(
+    "/api/realtime/token",
     apiLimiter,
-    express.text({ type: ["application/sdp", "text/plain"], limit: "64kb" }),
     async (req, res) => {
       const session = getSession(req.get("x-session-code"));
       if (!session) return res.status(404).send("Meeting session not found or expired.");
       if (!process.env.OPENAI_API_KEY) return res.status(503).send("OPENAI_API_KEY is not configured.");
-      if (!req.body?.startsWith("v=")) return res.status(400).send("A valid SDP offer is required.");
 
       const sessionConfig = {
         type: "transcription",
@@ -88,17 +86,15 @@ export function createApplication() {
 
       try {
         const upstreamController = new AbortController();
-        const upstreamTimeout = setTimeout(() => upstreamController.abort(), 20_000);
-        const form = new FormData();
-        form.set("sdp", req.body);
-        form.set("session", JSON.stringify(sessionConfig));
-        const upstream = await fetch("https://api.openai.com/v1/realtime/calls", {
+        const upstreamTimeout = setTimeout(() => upstreamController.abort(), 15_000);
+        const upstream = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
             "OpenAI-Safety-Identifier": crypto.createHash("sha256").update(session.code).digest("hex")
           },
-          body: form,
+          body: JSON.stringify({ session: sessionConfig }),
           signal: upstreamController.signal
         });
         clearTimeout(upstreamTimeout);
@@ -114,11 +110,13 @@ export function createApplication() {
           }
           return res.status(502).send(`OpenAI error ${upstream.status}: ${upstreamMessage}`);
         }
-        res.type("application/sdp").send(body);
+        const tokenData = JSON.parse(body);
+        if (!tokenData?.value) return res.status(502).send("OpenAI did not return a temporary connection token.");
+        res.json({ value: tokenData.value });
       } catch (error) {
         console.error("Realtime setup error:", error);
         const message = error?.name === "AbortError"
-          ? "OpenAI did not respond within 20 seconds. Please try Start listening again."
+          ? "OpenAI did not respond within 15 seconds. Please try Start listening again."
           : "Could not connect to the transcription service.";
         res.status(502).send(message);
       }
